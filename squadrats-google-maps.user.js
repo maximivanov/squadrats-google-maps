@@ -41,6 +41,7 @@
   let enabled = true;
   let outline = false;
   let stopped = false;
+  let warm = null;
 
   if (window.__sqdStop) { try { window.__sqdStop(); } catch (e) {} }
 
@@ -74,18 +75,29 @@
   const canvas = document.createElement('canvas');
   canvas.id = 'sqd-canvas';
   const ctx = canvas.getContext('2d');
-  function mountHost() {
-    const scene = document.querySelector('canvas');
-    return (scene && scene.parentElement) || document.body;
-  }
-  function mount() {
-    const host = mountHost();
-    const fixed = host === document.body;
+  // Google's WebGL map canvas usually does NOT exist yet at document-idle, so we
+  // can't mount into its container immediately. locateHost() finds it (excluding
+  // our own canvas); ensureMounted() (re)parents the overlay the moment that
+  // container appears or is swapped on navigation, falling back to a fixed layer
+  // only while no map canvas exists.
+  const locateHost = () => {
+    const scene = document.querySelector('canvas:not(#sqd-canvas)');
+    return scene ? scene.parentElement : null;
+  };
+  const place = (host) => {
+    const parent = host || document.body;
+    if (!parent) return; // body not ready yet (very early run); warm-up loop retries
+    const fixed = !host;
     canvas.style.cssText = 'position:' + (fixed ? 'fixed' : 'absolute') +
       ';inset:0;pointer-events:none;z-index:1;transition:opacity .12s;';
-    host.appendChild(canvas);
-  }
-  mount();
+    parent.appendChild(canvas);
+  };
+  const ensureMounted = () => {
+    const host = locateHost();
+    if (host) { if (canvas.parentElement !== host) place(host); }
+    else if (!canvas.isConnected) place(null);
+  };
+  ensureMounted();
 
   const cache = new Map();
   let timestamp = null;
@@ -127,7 +139,7 @@
   let token = 0;
   async function render() {
     if (stopped) return;
-    if (!canvas.isConnected) mount(); // Google may swap the map container on navigation
+    ensureMounted(); // upgrade into the map container once it exists; re-attach after navigation
     const dpr = window.devicePixelRatio || 1;
     const cw = window.innerWidth, ch = window.innerHeight;
     canvas.width = cw * dpr; canvas.height = ch * dpr;
@@ -216,8 +228,17 @@
     window.removeEventListener('mouseup', onUp, true);
     window.removeEventListener('wheel', onWheel, true);
     window.removeEventListener('keydown', onKey);
-    clearInterval(poll); canvas.remove();
+    clearInterval(poll); clearInterval(warm); canvas.remove();
   };
+
+  // Map canvas loads asynchronously after document-idle — keep redrawing until
+  // the container exists (so we mount into it), then stop the warm-up loop.
+  warm = setInterval(() => {
+    if (stopped) { clearInterval(warm); return; }
+    schedule();
+    if (locateHost()) clearInterval(warm);
+  }, 300);
+  setTimeout(() => clearInterval(warm), 20000);
 
   render();
 })();
