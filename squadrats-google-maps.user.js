@@ -63,8 +63,20 @@
     return { x: (lng + 180) / 360, y: 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI) };
   };
   const getView = () => {
-    const m = location.href.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*),(\d+\.?\d*)z/);
-    return m ? { lat: +m[1], lng: +m[2], zoom: +m[3] } : null;
+    const href = location.href;
+    // map mode: @lat,lng,<zoom>z
+    const z = href.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*),(\d+\.?\d*)z/);
+    if (z) return { lat: +z[1], lng: +z[2], zoom: +z[3] };
+    // satellite (top-down) mode: @lat,lng,<meters>m  — third value is the viewport
+    // height in ground metres; derive zoom from Web-Mercator metres-per-pixel.
+    // (Tilted/3D earth view uses a,y,h,t params and won't match → overlay hides.)
+    const m = href.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*),(\d+\.?\d*)m(?![a-z])/);
+    if (m) {
+      const lat = +m[1], lng = +m[2], meters = +m[3];
+      const zoom = Math.log2(156543.03392 * Math.cos(lat * Math.PI / 180) * window.innerHeight / meters);
+      return { lat, lng, zoom };
+    }
+    return null;
   };
 
   // ---------------- overlay canvas ----------------
