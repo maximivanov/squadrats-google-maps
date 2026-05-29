@@ -40,6 +40,7 @@
 
   let enabled = true;
   let outline = false;
+  let stopped = false;
 
   if (window.__sqdStop) { try { window.__sqdStop(); } catch (e) {} }
 
@@ -66,11 +67,25 @@
   };
 
   // ---------------- overlay canvas ----------------
+  // Mount inside Google's map-tile container (the parent of the WebGL scene
+  // canvas) so it sits above the tiles but BELOW Google's side panel, place
+  // cards and controls, which live in sibling containers that stack on top.
+  // Fall back to a fixed full-window layer if the container can't be found.
   const canvas = document.createElement('canvas');
   canvas.id = 'sqd-canvas';
-  canvas.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483000;transition:opacity .12s;';
-  document.body.appendChild(canvas);
   const ctx = canvas.getContext('2d');
+  function mountHost() {
+    const scene = document.querySelector('canvas');
+    return (scene && scene.parentElement) || document.body;
+  }
+  function mount() {
+    const host = mountHost();
+    const fixed = host === document.body;
+    canvas.style.cssText = 'position:' + (fixed ? 'fixed' : 'absolute') +
+      ';inset:0;pointer-events:none;z-index:1;transition:opacity .12s;';
+    host.appendChild(canvas);
+  }
+  mount();
 
   const cache = new Map();
   let timestamp = null;
@@ -111,6 +126,8 @@
 
   let token = 0;
   async function render() {
+    if (stopped) return;
+    if (!canvas.isConnected) mount(); // Google may swap the map container on navigation
     const dpr = window.devicePixelRatio || 1;
     const cw = window.innerWidth, ch = window.innerHeight;
     canvas.width = cw * dpr; canvas.height = ch * dpr;
@@ -155,30 +172,50 @@
 
   // ---------------- react to movement ----------------
   const _rs = history.replaceState, _ps = history.pushState;
-  let raf = null;
-  const schedule = () => { if (raf) cancelAnimationFrame(raf); raf = requestAnimationFrame(render); };
-  history.replaceState = function () { _rs.apply(this, arguments); schedule(); };
-  history.pushState = function () { _ps.apply(this, arguments); schedule(); };
-  window.addEventListener('popstate', schedule);
-  window.addEventListener('resize', schedule);
-  const hide = () => { if (enabled) canvas.style.opacity = '0'; };
-  window.addEventListener('mousedown', hide, true);
-  window.addEventListener('wheel', hide, true);
-  let lastHref = '';
-  const poll = setInterval(() => { if (location.href !== lastHref) { lastHref = location.href; schedule(); } }, 350);
+  let raf = null, st = null;
+  const schedule = () => {
+    if (stopped) return;
+    if (raf) cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(render);
+    clearTimeout(st); st = setTimeout(render, 250); // fallback if rAF is throttled (background tab)
+  };
+  const onReplace = function () { _rs.apply(this, arguments); schedule(); };
+  const onPush = function () { _ps.apply(this, arguments); schedule(); };
+  history.replaceState = onReplace; history.pushState = onPush;
 
-  window.addEventListener('keydown', (e) => {
+  // hide only during an actual drag (mousedown + move); a plain click to open a
+  // place must NOT blink the overlay. Always restore on release.
+  let down = false, dragging = false;
+  const onDown = () => { down = true; };
+  const onMove = () => { if (down && !dragging) { dragging = true; if (enabled) canvas.style.opacity = '0'; } };
+  const onUp = () => { down = false; if (dragging) { dragging = false; schedule(); } };
+  const onWheel = () => { if (enabled) canvas.style.opacity = '0'; schedule(); };
+  const onKey = (e) => {
     if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
     if (e.key === 's' || e.key === 'S') { enabled = !enabled; schedule(); }
     if (e.key === 'o' || e.key === 'O') { outline = !outline; schedule(); }
-  });
+  };
+  window.addEventListener('popstate', schedule);
+  window.addEventListener('resize', schedule);
+  window.addEventListener('mousedown', onDown, true);
+  window.addEventListener('mousemove', onMove, true);
+  window.addEventListener('mouseup', onUp, true);
+  window.addEventListener('wheel', onWheel, true);
+  window.addEventListener('keydown', onKey);
+  let lastHref = '';
+  const poll = setInterval(() => { if (location.href !== lastHref) { lastHref = location.href; schedule(); } }, 350);
 
   window.__sqdStop = () => {
-    history.replaceState = _rs; history.pushState = _ps;
+    stopped = true;
+    if (history.replaceState === onReplace) history.replaceState = _rs;
+    if (history.pushState === onPush) history.pushState = _ps;
     window.removeEventListener('popstate', schedule);
     window.removeEventListener('resize', schedule);
-    window.removeEventListener('mousedown', hide, true);
-    window.removeEventListener('wheel', hide, true);
+    window.removeEventListener('mousedown', onDown, true);
+    window.removeEventListener('mousemove', onMove, true);
+    window.removeEventListener('mouseup', onUp, true);
+    window.removeEventListener('wheel', onWheel, true);
+    window.removeEventListener('keydown', onKey);
     clearInterval(poll); canvas.remove();
   };
 
