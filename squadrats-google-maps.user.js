@@ -70,11 +70,21 @@
     // satellite (top-down) mode: @lat,lng,<meters>m  — third value is the viewport
     // height in ground metres; derive zoom from Web-Mercator metres-per-pixel.
     // (Tilted/3D earth view uses a,y,h,t params and won't match → overlay hides.)
+    const mppZoom = (lat, groundMeters) =>
+      Math.log2(156543.03392 * Math.cos(lat * Math.PI / 180) * window.innerHeight / groundMeters);
     const m = href.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*),(\d+\.?\d*)m(?![a-z])/);
-    if (m) {
-      const lat = +m[1], lng = +m[2], meters = +m[3];
-      const zoom = Math.log2(156543.03392 * Math.cos(lat * Math.PI / 180) * window.innerHeight / meters);
-      return { lat, lng, zoom };
+    if (m) return { lat: +m[1], lng: +m[2], zoom: mppZoom(+m[1], +m[3]) };
+    // satellite 3D-camera form: @lat,lng,<alt>a,<fov>y[,<heading>h],<tilt>t
+    // Only safe to draw flat when (near) top-down and north-up; the ground
+    // height = 2·alt·tan(fov/2). Real tilt/rotation can't be Mercator-projected.
+    const c = href.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*),([\d.]+)a,([\d.]+)y,(?:(-?[\d.]+)h,)?(-?[\d.]+)t/);
+    if (c) {
+      const lat = +c[1], lng = +c[2], alt = +c[3], fov = +c[4];
+      const heading = c[5] ? +c[5] : 0, tilt = +c[6];
+      if (tilt <= 5 && (heading <= 1 || heading >= 359)) {
+        const groundH = 2 * alt * Math.tan((fov / 2) * Math.PI / 180);
+        return { lat, lng, zoom: mppZoom(lat, groundH) };
+      }
     }
     return null;
   };
