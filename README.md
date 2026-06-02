@@ -36,6 +36,7 @@ Your tiles are served per‑account, keyed by your Squadrats (Firebase) user id.
 
 | Key | Action |
 | --- | --- |
+| **Squadrats** button (top-right of the map) | Toggle the overlay on/off |
 | `S` | Toggle the overlay on/off |
 | `O` | Toggle the collected‑region outline |
 

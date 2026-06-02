@@ -111,6 +111,29 @@
   };
   ensureMounted();
 
+  // ---------------- on/off toggle button ----------------
+  const btn = document.createElement('button');
+  btn.id = 'sqd-toggle';
+  btn.type = 'button';
+  btn.title = 'Toggle Squadrats overlay (S)';
+  const refreshBtn = () => {
+    btn.style.cssText = [
+      'position:fixed', 'top:74px', 'right:12px', 'z-index:1000001',
+      'display:flex', 'align-items:center', 'gap:7px',
+      'height:32px', 'padding:0 11px', 'margin:0', 'border:none', 'border-radius:8px',
+      'background:#fff', 'box-shadow:0 1px 4px rgba(0,0,0,.3)',
+      'font:500 13px/1 Roboto,Arial,sans-serif', 'color:#3c4043',
+      'cursor:pointer', 'user-select:none', 'opacity:' + (enabled ? '1' : '.7')
+    ].join(';');
+    btn.innerHTML =
+      '<span style="width:12px;height:12px;border-radius:3px;box-sizing:border-box;display:inline-block;' +
+      'border:2px solid #639;background:' + (enabled ? '#639' : 'transparent') + '"></span>' +
+      '<span>Squadrats</span>';
+  };
+  btn.addEventListener('click', () => { enabled = !enabled; refreshBtn(); schedule(); });
+  refreshBtn();
+  document.body.appendChild(btn);
+
   const cache = new Map();
   let timestamp = null;
   const getTimestamp = async () => {
@@ -216,7 +239,7 @@
   const onWheel = () => { if (enabled) canvas.style.opacity = '0'; schedule(); };
   const onKey = (e) => {
     if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
-    if (e.key === 's' || e.key === 'S') { enabled = !enabled; schedule(); }
+    if (e.key === 's' || e.key === 'S') { enabled = !enabled; refreshBtn(); schedule(); }
     if (e.key === 'o' || e.key === 'O') { outline = !outline; schedule(); }
   };
   window.addEventListener('popstate', schedule);
@@ -240,7 +263,7 @@
     window.removeEventListener('mouseup', onUp, true);
     window.removeEventListener('wheel', onWheel, true);
     window.removeEventListener('keydown', onKey);
-    clearInterval(poll); clearInterval(warm); canvas.remove();
+    clearInterval(poll); clearInterval(warm); canvas.remove(); btn.remove();
   };
 
   // Map canvas loads asynchronously after document-idle — keep redrawing until
