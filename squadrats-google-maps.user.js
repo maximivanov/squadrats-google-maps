@@ -38,7 +38,7 @@
   const COL_INHO = 'rgba(0,200,120,0.38)';    // squadratinhos fill (green)
   const COL_LINE = 'rgba(102,51,153,0.85)';   // region outline
 
-  let enabled = true;
+  let enabled = false; // off by default; turn on via the Squadrats button or the S key
   let outline = false;
   let stopped = false;
   let warm = null;
